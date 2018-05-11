@@ -13,21 +13,22 @@ def conv(layer_name, batch_input, filter_size, stride=[1,1,1,1], out_chn, is_tra
     in_chn = tf.shape(batch_input)[-1]
     h, w = filter_size[0]
     
-    w = tf.get_variable(name='weights',
-                        trainable=is_trainable,
-                        shape=[h, w, in_chn, out_chn],
-                        initializer=tf.contrib.layers.xavier_initializer())
-    b = tf.get_variable(name='bias',
-                        trainable=is_trainable,
-                        shape=[out_chn],
-                        initializer=tf.constant_initializer(0.0)) 
-    batch_input = tf.nn.conv2d(batch_input, w, strides=stride, padding="SAME", name='conv')
-    
-    #bias add
-    batch_input = tf.nn.bias_add(batch_input, b, name='add_bias')
-    
-    #relu
-    batch_input = tf.nn.relu(batch_input, name='relu')
+    with tf.variable_scope(layer_name):
+        w = tf.get_variable(name='weights',
+                            trainable=is_trainable,
+                            shape=[h, w, in_chn, out_chn],
+                            initializer=tf.contrib.layers.xavier_initializer())
+        b = tf.get_variable(name='bias',
+                            trainable=is_trainable,
+                            shape=[out_chn],
+                            initializer=tf.constant_initializer(0.0)) 
+        batch_input = tf.nn.conv2d(batch_input, w, strides=stride, padding="SAME", name='conv')
+        
+        #bias add
+        batch_input = tf.nn.bias_add(batch_input, b, name='add_bias')
+        
+        #relu
+        batch_input = tf.nn.relu(batch_input, name='relu')
     
     return batch_input
 
@@ -86,4 +87,5 @@ def pooling(layer_name, batch_input, filter_size=[1,2,2,1], p="avg"):
                                  name=layer_name)
         
 #%%                                 
-                                 
+
+def composite_func(layer_name, )       
