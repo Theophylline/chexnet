@@ -1,40 +1,35 @@
 import tensorflow as tf
 
 #%%
-def conv(layer_name, batch_input, filter_size, stride=[1,1,1,1], out_chn, is_trainable=True):
+def conv(name, batch_input, filter_size, stride=1, out_chn, is_trainable=True):
 # =============================================================================
 #     Arguments:
-#         filter_size: 1D tensor of length 2. assumes k x k square filter. e.g [2,2]
+#         filter_size: assumes k x k square filter.
 #         stride: stride length. default = 1
 #         out_chn: number of filters
 # =============================================================================
     
     #convolution
     in_chn = tf.shape(batch_input)[-1]
-    h, w = filter_size[0]
+    h, w = filter_size
     
-    with tf.variable_scope(layer_name):
-        w = tf.get_variable(name='weights',
-                            trainable=is_trainable,
-                            shape=[h, w, in_chn, out_chn],
-                            initializer=tf.contrib.layers.xavier_initializer())
-        b = tf.get_variable(name='bias',
-                            trainable=is_trainable,
-                            shape=[out_chn],
-                            initializer=tf.constant_initializer(0.0)) 
-        batch_input = tf.nn.conv2d(batch_input, w, strides=stride, padding="SAME", name='conv')
-        
-        #bias add
-        batch_input = tf.nn.bias_add(batch_input, b, name='add_bias')
-        
-        #relu
-        batch_input = tf.nn.relu(batch_input, name='relu')
+    w = tf.get_variable(name='weights',
+                        trainable=is_trainable,
+                        shape=[h, w, in_chn, out_chn],
+                        initializer=tf.contrib.layers.xavier_initializer())
+    b = tf.get_variable(name='bias',
+                        trainable=is_trainable,
+                        shape=[out_chn],
+                        initializer=tf.constant_initializer(0.0)) 
+    batch_input = tf.nn.conv2d(batch_input, w, strides=[1, stride, stride, 1], padding="SAME", name=name)
+    
+    #bias add
+    batch_input = tf.nn.bias_add(batch_input, b, name='add_bias')
     
     return batch_input
 
 #%%
-
-def batch_norm(batch_input):
+def batch_norm(name, batch_input):
     
     # batch_input: 4D tensor [batch, length, width, depth]
     # returns normalized input
@@ -54,13 +49,14 @@ def batch_norm(batch_input):
                                            variance = batch_variance,
                                            offset = beta,
                                            scale = gamma,
-                                           variance_epsilon = epsilon)
+                                           variance_epsilon = epsilon,
+                                           name=name)
     return batch_input
 
 #%%
     
 
-def pooling(layer_name, batch_input, filter_size=[1,2,2,1], p="avg"):
+def pooling(layer_name, batch_input, filter_size=2, p="avg"):
     
 # =============================================================================
 #     Arguments:
@@ -87,5 +83,21 @@ def pooling(layer_name, batch_input, filter_size=[1,2,2,1], p="avg"):
                                  name=layer_name)
         
 #%%                                 
-
-def composite_func(layer_name, )       
+def composite_func(l, growth=12):
+    
+        l = batch_norm('BN', l)
+        l = tf.nn.relu(l, name='relu')
+        l = conv('conv', l, filter_size=3, growth)
+        
+        return l
+    
+#%%
+def add_layer(name, l):
+    
+    with tf.variable_scope(name):
+        c = composite_func(l)
+        c = tf.concat([c, l], 3)
+        
+    return c
+    
+        
