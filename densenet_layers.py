@@ -29,7 +29,7 @@ def conv(name, batch_input, filter_size, stride=1, out_chn, is_trainable=True):
     return batch_input
 
 #%%
-def batch_norm(name, batch_input):
+def batch_norm(batch_input):
     
     # batch_input: 4D tensor [batch, length, width, depth]
     # returns normalized input
@@ -50,7 +50,7 @@ def batch_norm(name, batch_input):
                                            offset = beta,
                                            scale = gamma,
                                            variance_epsilon = epsilon,
-                                           name=name)
+                                           name='BN')
     return batch_input
 
 #%%
@@ -73,17 +73,17 @@ def pooling(layer_name, batch_input, filter_size=2, p="avg"):
         return tf.nn.max_pooling(value=batch_input,
                                  padding='SAME',
                                  ksize=filter_size,
-                                 strides=[1,filter_size[1], filter_size[1], 1]
+                                 strides=[1,filter_size, filter_size, 1]
                                  name=layer_name)
     else:
         return tf.nn.avg_pooling(value=batch_input,
                                  padding='SAME',
                                  ksize=filter_size,
-                                 strides=[1,filter_size[1], filter_size[1], 1]
+                                 strides=[1,filter_size, filter_size, 1]
                                  name=layer_name)
         
 #%%                                 
-def composite_func(l, growth=12):
+def composite_func(l, growth=k):
     
         l = batch_norm('BN', l)
         l = tf.nn.relu(l, name='relu')
@@ -99,5 +99,14 @@ def add_layer(name, l):
         c = tf.concat([c, l], 3)
         
     return c
-    
+#%%
+
+def transition_layer(name, l):
+    out_chn = tf.shape(l).shape[3]
+    with tf.variable_scope(name):
+        l = batch_norm('BN', l)
+        l = tf.nn.relu(l, name='relu')
+        l = conv('conv', l, filter_size=3, out_chn)
+        l = pooling('pooling', l, 2)
+        
         
