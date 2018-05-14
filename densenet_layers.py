@@ -102,11 +102,14 @@ def add_layer(name, l):
 #%%
 
 def transition_layer(name, l):
+    
     out_chn = tf.shape(l).shape[3]
     with tf.variable_scope(name):
         l = batch_norm('BN', l)
         l = tf.nn.relu(l, name='relu')
         l = conv('conv', l, filter_size=3, out_chn)
         l = pooling('pooling', l, 2)
+    
+    return l
         
         
