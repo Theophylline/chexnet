@@ -1,12 +1,11 @@
 import tensorflow as tf
-import numpy as np
 import skimage.io as io
-import skimage.transform as st
 import pandas as pd
 import os
+from random import shuffle
 
 IMAGE_DIR = "E:\project data\chexnet\images" # raw data directory
-TFRECORD_DIR = "" # output dir
+TFRECORD_DIR = "E:\project data\chexnet" # tfrecords directory
 
 
 #%%
@@ -42,6 +41,7 @@ def load_files(IMAGE_DIR):
     classes = len(diseases)
     
     df = pd.read_csv('Data_Entry_2017.csv')
+    df = df.head(10)
     
     # append image paths and one hot encoding
     for _, row in df[["Image Index", "Finding Labels"]].iterrows():
@@ -51,71 +51,84 @@ def load_files(IMAGE_DIR):
         if label == "No Finding":
             labels.append([0] * classes)
         else:
-            #one hot encoding
-            one_hot_vec = [0] * classes
+            # multi hot encoding
+            multi_hot_vec = [0] * classes
             diagnosis = label.split("|")
             indices = [diseases.index(s) for _, s in enumerate(diagnosis)]
             
             for _, v in enumerate(indices):
-                one_hot_vec[v] = 1
+                multi_hot_vec[v] = 1
                 
-            labels.append(one_hot_vec)
+            labels.append(multi_hot_vec)
     
-    return image_paths, labels
+    dataset = list(zip(image_paths, labels))
+    shuffle(dataset)
+    
+    return dataset # list of tuples [(image_paths, label), ... ]
 
 #%%
 
-def write_TFRecords(image_paths, labels, num_files=len(image_paths), name, TFRECORD_DIR):
+def write_TFRecords(dataset, name, TFRECORD_DIR):
     
 # =============================================================================
 #     Converts preprocessed images into sharded TFRecords
 #     
 #     Arguments:
-#       image_paths: paths of image files
-#       labels: one hot vector representing disease class
-#       num_files: number of files per shard
+#       dataset: list of tuples containing image paths and label
 #       name: name of the TFrecord file
 #       TFRECORD_DIR: output directory
 #     
 #     Returns:
 #       none
 # =============================================================================
-    if len(image_paths) != len(labels):
-        raise ValueError("There are %d image files and %d labels." %(len(image_paths), len(labels)))
     
-    if num_files > len(image_paths):
-        raise ValueError("Cannot have shard size greater than the total number of images")
-    
-    file_count = 0
+    fname = os.path.join(TFRECORD_DIR, name + '.tfrecords')
     print("Writing TFRecords...")
     
-    for i in range(0, len(image_paths), num_files):
-        # Set TFrecords file name
-        if num_files == len(image_paths):
-            fname = os.path.join(TFRECORD_DIR, name + '.tfrecords')
-            image_slice = image_paths
-        else:
-            fname = os.path.join(TFRECORD_DIR, name + str(file_count) + '.tfrecords')
-            image_slice = image_paths[i:i+num_files]
+# =============================================================================
+#     for i in range(0, len(image_paths), num_files):
+#         # Set TFrecords file name
+#         if num_files == len(image_paths):
+#             fname = os.path.join(TFRECORD_DIR, name + '.tfrecords')
+#             image_slice = image_paths
+#         else:
+#             fname = os.path.join(TFRECORD_DIR, name + str(file_count) + '.tfrecords')
+#             image_slice = image_paths[i:i+num_files]
+# =============================================================================
             
-        with tf.python_io.TFRecordWriter(fname) as writer:
-            for i, file_path in enumerate(image_slice):        
-                try:
-                    image = io.imread(file_path)
-                    assert image.shape == (1024, 1024)
-                    image_raw = image.tostring()
-                    example = tf.train.Example(features=tf.train.Features(feature={
-                                'label':int64_feature(labels[i]),
-                                'image_raw': bytes_feature(image_raw)
-                                }))
-                    writer.write(example.SerializeToString())
-                    
-                except IOError as err:
-                    print("Image could not be read. Error: %s" %err)
-                    print("Image skipped\n")
-        file_count += 1
+    with tf.python_io.TFRecordWriter(fname) as writer:
+        
+        count = 0
+        
+        for image_path, label in zip(*dataset):        
+            try:
+                image = io.imread(image_path)
+                assert image.shape == (1024, 1024)
+                image_raw = image.tostring()
+                example = tf.train.Example(features=tf.train.Features(feature={
+                            'label': int64_feature(label),
+                            'image': bytes_feature(image_raw)
+                            }))
+                writer.write(example.SerializeToString())
+                
+            except IOError as err:
+                count += 1
+                print("Image could not be read. Error: %s" %err)
+                print("Image skipped\n")
         
     print("Conversion complete")
+    print("There were {} corrupt files".format(count))
 
 #%%
+
+ds = load_files(IMAGE_DIR)
+t, cv = int(103568 * 0.935), int(103568 * 0.06)
+train, val, test = ds[0:t], ds[t:t+cv], ds[cv:] # 93.5/6/0.5 train/val/test split
+
+# writes a tfrecord file for train, validation, and training set
+write_TFRecords(train, 'chexnet_train', TFRECORD_DIR)
+write_TFRecords(val, 'chexnet_val', TFRECORD_DIR)
+write_TFRecords(test, 'chexnet_test', TFRECORD_DIR)
+
+
 
