@@ -5,15 +5,12 @@ from densenet_layers import *
 tf.logging.set_verbosity(tf.logging.INFO)
 
 TFRecords_dir = ""
-fpaths = glob.glob(TFRecords_dir + "*.tfrecords")
+train_paths = glob.glob(TFRecords_dir + "*.tfrecords")
+eval_paths = []
 db_121 = [6, 12, 24, 16]
 db_169 = [6, 12, 32, 32]
 db_201 = [6, 12, 48, 32]
 
-#%%
-
-# read from TFRecords
-ds = tf.data.TFRecordDataset(fpaths)
 
 #%%
 # model
@@ -88,26 +85,34 @@ def DenseNet(l, labels, mode, depth = 121, k = 12):
                 'accuracy': predictions['accuracy']
         }
         return tf.estimator.EstimatorSpec(mode, loss=cost, eval_metric_ops=metrics)
-    
-def input_func(tfrecords=fpaths):
-    
-    def parser(example):
-        features = tf.parse_single_example(
-                example,
-                features={
-                        'image': tf.FixedLenFeature([], tf.string),
-                        'label': tf.FixedLenFeature([], tf.int64),
-                })
-            
-        image = tf.decode_raw(features['image'], tf.uint8)
-        image = tf.cast(image, tf.float32)
-        label = tf.cast(features['label'], tf.int32)
+#%%
+
+def parser(example, mode='train'):
+    features = tf.parse_single_example(
+            example,
+            features={
+                    'image': tf.FixedLenFeature([], tf.string),
+                    'label': tf.FixedLenFeature([], tf.int64),
+            })
         
-        # image augmentation
-        
-        return image, label
+    image = tf.decode_raw(features['image'], tf.uint8)
+    image = tf.cast(image, tf.float32)
+    label = tf.cast(features['label'], tf.int32)
     
-    ds = tf.data.TFRecordDataset(tfrecords)
+    # image augmentation only in training mode
+    if mode == 'train':
+        image = tf.image.central_crop(image, 0.8) # crop the central 80% of the image
+        image = tf.image.resize_images(image, [224, 224]) # Bilinear interpolation
+        image = tf.image.per_image_standardization(image) # normalize; ChexNet actually uses avg and std of the ImageNet training set
+        image = tf.image.random_flip_left_right(image)
+    
+    return image, label
+
+#%%
+    
+def input_func(tfrecords_train=train_paths):
+    
+    ds = tf.data.TFRecordDataset(tfrecords_train)
     ds = ds.map(parser) # parsing TFrecords; performance improvements?
     ds = ds.shuffle(1024)
     ds = ds.repeat()    
@@ -117,8 +122,15 @@ def input_func(tfrecords=fpaths):
     
     return batch_img, batch_labels
 
-def eval_func():
-    return None
+def eval_func(tfrecords_eval):
+    
+    ds = tf.data.TFRecordDataset(tfrecords_eval)
+    ds = ds.map(lambda: parser(x, mode='eval')) # parsing TFrecords; performance improvements?   
+    ds = ds.repeat(count=1) # go through evaluaation set only once
+    iterator = ds.make_one_shot_iterator()
+    eval_img, eval_labels = iterator.get_next()
+    
+    return eval_img, eval_labels
 
 def main():
     chexnet = tf.estimator.Estimator(model_fn=DenseNet, model_fir='tmp/chexnet')
