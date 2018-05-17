@@ -89,6 +89,7 @@ def DenseNet(l, labels, mode, depth = 121, k = 12):
         return tf.estimator.EstimatorSpec(mode, loss=cost, eval_metric_ops=metrics)
 #%%
 
+# parser for TFrecords
 def parser(example, augmentation==True):
     features = tf.parse_single_example(
             example,
@@ -108,8 +109,6 @@ def parser(example, augmentation==True):
         image = tf.image.random_flip_left_right(image)
     
     return image, label
-
-#%%
 
 # input function for Estimator train()
 def input_func(tfrecords_train=train_paths):
@@ -149,6 +148,8 @@ def receiver_func():
     features['image'] = tmp
     
     return tf.estimator.export.ServingInputReceiver(features, receiver_tensors)
+
+#%%
 
 def main():
     chexnet = tf.estimator.Estimator(model_fn=DenseNet, model_dir='/model')
