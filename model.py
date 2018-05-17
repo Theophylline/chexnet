@@ -62,7 +62,9 @@ def DenseNet(l, labels, mode, depth = 121, k = 12):
         l = tf.layers.dense(l, units = 1000, activation = tf.nn.relu, name='fc1')
         logits = tf.layers.dense(l, units = 14, activation = tf.nn.relu, name='fc2') # [batch_size, 10]
     
-    cost = tf.nn.sigmoid_cross_entropy_with_logits(labels=label, logits=logits, name='cost_fn') # cost function
+    cross_entropy = tf.nn.sigmoid_cross_entropy_with_logits(labels=label, logits=logits) # cost function
+    cost = tf.reduce_mean(cross_entropy, name='cost_fn')
+    
     
     predictions = {
             'prob': tf.nn.sigmoid(logits)
@@ -87,7 +89,7 @@ def DenseNet(l, labels, mode, depth = 121, k = 12):
         return tf.estimator.EstimatorSpec(mode, loss=cost, eval_metric_ops=metrics)
 #%%
 
-def parser(example, mode='train'):
+def parser(example, augmentation==True):
     features = tf.parse_single_example(
             example,
             features={
@@ -95,12 +97,11 @@ def parser(example, mode='train'):
                     'label': tf.FixedLenFeature([], tf.int64),
             })
         
-    image = tf.decode_raw(features['image'], tf.uint8)
-    image = tf.cast(image, tf.float32)
+    image = tf.decode_raw(features['image'], tf.float32)
     label = tf.cast(features['label'], tf.int32)
     
     # image augmentation only in training mode
-    if mode == 'train':
+    if augmentation == True:
         image = tf.image.central_crop(image, 0.8) # crop the central 80% of the image
         image = tf.image.resize_images(image, [224, 224]) # Bilinear interpolation
         image = tf.image.per_image_standardization(image) # normalize; ChexNet actually uses avg and std of the ImageNet training set
@@ -109,31 +110,48 @@ def parser(example, mode='train'):
     return image, label
 
 #%%
-    
+
+# input function for Estimator train()
 def input_func(tfrecords_train=train_paths):
     
     ds = tf.data.TFRecordDataset(tfrecords_train)
     ds = ds.map(parser) # parsing TFrecords; performance improvements?
     ds = ds.shuffle(1024)
     ds = ds.repeat()    
-    ds = ds.batch(64)
+    ds = ds.batch(16)
     iterator = ds.make_one_shot_iterator()
     batch_img, batch_labels = iterator.get_next()
     
     return batch_img, batch_labels
 
+# input function for Estimator eval()
 def eval_func(tfrecords_eval):
     
     ds = tf.data.TFRecordDataset(tfrecords_eval)
-    ds = ds.map(lambda: parser(x, mode='eval')) # parsing TFrecords; performance improvements?   
+    ds = ds.map(lambda: parser(x, augmentation==False)) # parsing TFrecords; performance improvements?   
     ds = ds.repeat(count=1) # go through evaluaation set only once
     iterator = ds.make_one_shot_iterator()
     eval_img, eval_labels = iterator.get_next()
     
     return eval_img, eval_labels
 
+# for handling inference requests after deployment; takes no arguments
+def receiver_func():
+    # specifies the input node; can be a Tensor or a dict of string to Tensor
+    receiver_tensor = tf.placeholder(dtype=tf.float32, name='input_node')
+    
+    # specifies the features to be passed to the model
+    features = tf.parse_example(serialized_example, 
+                                features={'image': tf.FixedLenFeature([], tf.string)})
+    tmp = tf.decode_raw(features['image'], out_type=tf.float32)
+    tmp = tf.image.resize_images(tmp, [224, 224]) # Bilinear interpolation
+    tmp = tf.image.per_image_standardization(tmp) # normalize
+    features['image'] = tmp
+    
+    return tf.estimator.export.ServingInputReceiver(features, receiver_tensors)
+
 def main():
-    chexnet = tf.estimator.Estimator(model_fn=DenseNet, model_fir='tmp/chexnet')
+    chexnet = tf.estimator.Estimator(model_fn=DenseNet, model_dir='/model')
     
     log = { 
         "Accuracy" : 'accuracy'
@@ -142,6 +160,7 @@ def main():
     logging_hook = tf.train.LoggingTensorHook(tensors=log, every_n_iter=100)
     
     chexnet.train(input_fn=input_func, hooks=[logging_hook], steps=40000)
+    chexnet.export_savedmodel(export_dir_base='/log', receiver_func)
     results = chexnet.evaluate(input_fn=eval_func)
     print(results) # dict containing predicted labels and accuracy
     
