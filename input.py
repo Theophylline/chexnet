@@ -41,7 +41,6 @@ def load_files(IMAGE_DIR):
     classes = len(diseases)
     
     df = pd.read_csv('Data_Entry_2017.csv')
-    df = df.head(10)
     
     # append image paths and one hot encoding
     for _, row in df[["Image Index", "Finding Labels"]].iterrows():
@@ -97,13 +96,17 @@ def write_TFRecords(dataset, name, TFRECORD_DIR):
 # =============================================================================
             
     with tf.python_io.TFRecordWriter(fname) as writer:
+    
+        count = 0 # track progress
         
-        count = 0
-        
-        for image_path, label in zip(*dataset):        
+        for image_path, label in dataset: 
+            if os.path.isfile(image_path) == False: # some files in Data_Entry_2017.csv could not be extracted; skipped
+                continue
+            
             try:
                 image = io.imread(image_path)
-                assert image.shape == (1024, 1024)
+                if image.shape != (1024,1024):
+                    image = image[:,:,0] # some images are (1024,1024,4)
                 image_raw = image.tostring()
                 example = tf.train.Example(features=tf.train.Features(feature={
                             'label': int64_feature(label),
@@ -111,24 +114,33 @@ def write_TFRecords(dataset, name, TFRECORD_DIR):
                             }))
                 writer.write(example.SerializeToString())
                 
-            except IOError as err:
+                # print some stuff
                 count += 1
+                if count % 1000 == 0:
+                    print("Still working on it... Wrote {} files".format(count))
+                
+            except IOError as err:
                 print("Image could not be read. Error: %s" %err)
                 print("Image skipped\n")
+            except ValueError as err:
+                print("broken data stream")
         
-    print("Conversion complete")
-    print("There were {} corrupt files".format(count))
+    print("Conversion complete. Total files:", count)
+    tmp = len(dataset) - count
+    print("There were {} corrupt files".format(tmp))
 
 #%%
-
 ds = load_files(IMAGE_DIR)
-t, cv = int(103568 * 0.935), int(103568 * 0.06)
-train, val, test = ds[0:t], ds[t:t+cv], ds[cv:] # 93.5/6/0.5 train/val/test split
+t, cv = int(len(ds) * 0.935), int(len(ds) * 0.06)
+train, val, test = ds[0:t], ds[t:t+cv], ds[t+cv:] # 93.5/6/0.5 train/val/test split
 
-# writes a tfrecord file for train, validation, and training set
+# # writes a tfrecord file for train, validation, and training set
 write_TFRecords(train, 'chexnet_train', TFRECORD_DIR)
 write_TFRecords(val, 'chexnet_val', TFRECORD_DIR)
 write_TFRecords(test, 'chexnet_test', TFRECORD_DIR)
+
+#%%
+
 
 
 
