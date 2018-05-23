@@ -41,7 +41,8 @@ def load_files(IMAGE_DIR):
     classes = len(diseases)
     
     df = pd.read_csv('Data_Entry_2017.csv')
-    
+    #test
+    df = df.head(50)
     # append image paths and one hot encoding
     for _, row in df[["Image Index", "Finding Labels"]].iterrows():
         image_paths.append(os.path.join(IMAGE_DIR, row["Image Index"]))
@@ -141,6 +142,32 @@ write_TFRecords(test, 'chexnet_test', TFRECORD_DIR)
 
 #%%
 
+# Code below inspects the TFRecords files to make sure everything is ok
+# prints out a sample of images and corresponding labels
 
+import matplotlib.pyplot as plt
 
+sample = 0
+
+for example in tf.python_io.tf_record_iterator("E:\project data\chexnet\chexnet_test.tfrecords"):
+    if sample == 10:
+        break
+    result = tf.parse_single_example(example, features={
+                                                        'image': tf.FixedLenFeature([], tf.string),
+                                                        'label': tf.FixedLenFeature([14], tf.int64)
+                                                        })
+    image = tf.decode_raw(result['image'], tf.uint8)
+    image = tf.reshape(image, [1024,1024,1])
+    label = tf.cast(result['label'], tf.int32)
+    #label = result['label']
+    with tf.Session() as sess:
+        img, label = sess.run([image, label])
+        img = img.reshape([1024,1024])
+        plt.imshow(img)
+        plt.show()
+        print(label)
+    #print(result.features.feature['label'].int64_list.value)
+    sample += 1
+
+    
 
