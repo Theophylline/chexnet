@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 #%%
-def conv(name, batch_input, filter_size, stride=1, out_chn, is_trainable=True):
+def conv(batch_input, filter_size, out_chn, stride=1, is_trainable=True):
 # =============================================================================
 #     Arguments:
 #         filter_size: assumes k x k square filter.
@@ -10,18 +10,18 @@ def conv(name, batch_input, filter_size, stride=1, out_chn, is_trainable=True):
 # =============================================================================
     
     #convolution
-    in_chn = tf.shape(batch_input)[-1]
-    h, w = filter_size
-    
+    shape = batch_input.get_shape().as_list()
+    in_chn = shape[3]
     w = tf.get_variable(name='weights',
                         trainable=is_trainable,
-                        shape=[h, w, in_chn, out_chn],
+                        shape=[filter_size,filter_size, in_chn, out_chn],
                         initializer=tf.contrib.layers.xavier_initializer())
+
     b = tf.get_variable(name='bias',
                         trainable=is_trainable,
                         shape=[out_chn],
                         initializer=tf.constant_initializer(0.0)) 
-    batch_input = tf.nn.conv2d(batch_input, w, strides=[1, stride, stride, 1], padding="SAME", name=name)
+    batch_input = tf.nn.conv2d(batch_input, w, strides=[1, stride, stride, 1], padding="SAME", name='conv')
     
     #bias add
     batch_input = tf.nn.bias_add(batch_input, b, name='add_bias')
@@ -29,34 +29,27 @@ def conv(name, batch_input, filter_size, stride=1, out_chn, is_trainable=True):
     return batch_input
 
 #%%
-def batch_norm(batch_input):
+def batch_norm(name, batch_input):
     
     # batch_input: 4D tensor [batch, length, width, depth]
+    # no offset and scale
     # returns normalized input
     
-    epsilon = 1e-3
-    batch_mean, batch_variance = tf.nn.moments(batch_input, axis=[0])
-    
-    gamma = tf.get_variable(name="scale", 
-                            shape=tf.shape(batch_input)[-1],
-                            intializer=tf.ones_initializer())
-    beta = tf.get_variable(name="offset",
-                           shape=tf.shape(batch_input)[-1],
-                           intializer=tf.zeros_initializer())
+    batch_mean, batch_variance = tf.nn.moments(batch_input, axes=[0])
     
     batch_input = tf.nn.batch_normalization(x = batch_input, 
                                            mean = batch_mean, 
                                            variance = batch_variance,
-                                           offset = beta,
-                                           scale = gamma,
-                                           variance_epsilon = epsilon,
-                                           name='BN')
+                                           offset=None,
+                                           scale=None,
+                                           variance_epsilon=1e-3,
+                                           name=name)
     return batch_input
 
 #%%
     
 
-def pooling(layer_name, batch_input, filter_size=2, p="avg"):
+def pooling(batch_input, filter_size=2, p="avg"):
     
 # =============================================================================
 #     Arguments:
@@ -70,45 +63,47 @@ def pooling(layer_name, batch_input, filter_size=2, p="avg"):
 # =============================================================================
     
     if p == "max":
-        return tf.nn.max_pooling(value=batch_input,
+        return tf.nn.max_pool(value=batch_input,
                                  padding='SAME',
-                                 ksize=filter_size,
-                                 strides=[1,filter_size, filter_size, 1]
-                                 name=layer_name)
-    else:
-        return tf.nn.avg_pooling(value=batch_input,
+                                 ksize=[1,filter_size, filter_size, 1],
+                                 strides=[1,filter_size, filter_size, 1],
+                                 name='max_pool')
+    if p == 'avg':
+        return tf.nn.avg_pool(value=batch_input,
                                  padding='SAME',
-                                 ksize=filter_size,
-                                 strides=[1,filter_size, filter_size, 1]
-                                 name=layer_name)
+                                 ksize=[1,filter_size, filter_size, 1],
+                                 strides=[1,filter_size, filter_size, 1],
+                                 name='avg_pool')
         
 #%%                                 
-def composite_func(l, growth=k):
+def composite_func(l, growth=32):
     
         l = batch_norm('BN', l)
         l = tf.nn.relu(l, name='relu')
-        l = conv('conv', l, filter_size=3, growth)
+        l = conv(l, out_chn=growth, filter_size=3)
         
         return l
     
 #%%
-def add_layer(name, l):
+def add_layer(name, prev_l, l):
     
     with tf.variable_scope(name):
-        c = composite_func(l)
-        c = tf.concat([c, l], 3)
+        l = composite_func(l)
+        l = tf.concat([prev_l, l], 3)
         
-    return c
+    return l
 #%%
 
-def transition_layer(name, l):
+def transition_layer(name, l, compression=0.5):
+    # compression ratio: (0, 1)
     
-    out_chn = tf.shape(l).shape[3]
+    shape = l.get_shape().as_list()
+    out_chn = shape[3] * compression
     with tf.variable_scope(name):
         l = batch_norm('BN', l)
         l = tf.nn.relu(l, name='relu')
-        l = conv('conv', l, filter_size=3, out_chn)
-        l = pooling('pooling', l, 2)
+        l = conv(l, out_chn=out_chn, filter_size=1)
+        l = pooling(l)
     
     return l
         
