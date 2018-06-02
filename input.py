@@ -142,6 +142,15 @@ write_TFRecords(test, 'chexnet_test', TFRECORD_DIR)
 
 #%%
 
+# generate a small dataset for testing purposes
+
+ds = load_files(IMAGE_DIR)
+small_ds = ds[0:20]
+write_TFRecords(small_ds, 'densenet_test', TFRECORD_DIR)
+
+
+#%%
+
 # Code below inspects the TFRecords files to make sure everything is ok
 # prints out a sample of images and corresponding labels
 
@@ -149,8 +158,8 @@ import matplotlib.pyplot as plt
 
 sample = 0
 
-for example in tf.python_io.tf_record_iterator("E:\project data\chexnet\chexnet_test.tfrecords"):
-    if sample == 10:
+for example in tf.python_io.tf_record_iterator("E:\project data\chexnet\densenet_test.tfrecords"):
+    if sample == 50:
         break
     result = tf.parse_single_example(example, features={
                                                         'image': tf.FixedLenFeature([], tf.string),
@@ -158,6 +167,7 @@ for example in tf.python_io.tf_record_iterator("E:\project data\chexnet\chexnet_
                                                         })
     image = tf.decode_raw(result['image'], tf.uint8)
     image = tf.reshape(image, [1024,1024,1])
+    
     label = tf.cast(result['label'], tf.int32)
     #label = result['label']
     with tf.Session() as sess:
@@ -168,6 +178,16 @@ for example in tf.python_io.tf_record_iterator("E:\project data\chexnet\chexnet_
         print(label)
     #print(result.features.feature['label'].int64_list.value)
     sample += 1
+
+#%%
+
+# inspect checkpoint of pretrained DenseNet
+
+from tensorflow.python.tools import inspect_checkpoint as chkp
+
+chkp.print_tensors_in_checkpoint_file("./pretrained_model/tf-densenet121.ckpt", tensor_name='', all_tensors=False)
+chkp.print_tensors_in_checkpoint_file("./model/model.ckpt-1", tensor_name='', all_tensors=False)
+
 
     
 
