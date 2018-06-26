@@ -41,8 +41,7 @@ def load_files(IMAGE_DIR):
     classes = len(diseases)
     
     df = pd.read_csv('Data_Entry_2017.csv')
-    #test
-    df = df.head(50)
+
     # append image paths and one hot encoding
     for _, row in df[["Image Index", "Finding Labels"]].iterrows():
         image_paths.append(os.path.join(IMAGE_DIR, row["Image Index"]))
@@ -132,8 +131,13 @@ def write_TFRecords(dataset, name, TFRECORD_DIR):
 
 #%%
 ds = load_files(IMAGE_DIR)
-t, cv = int(len(ds) * 0.935), int(len(ds) * 0.06)
-train, val, test = ds[0:t], ds[t:t+cv], ds[t+cv:] # 93.5/6/0.5 train/val/test split
+t, cv = int(len(ds) * 0.7), int(len(ds) * 0.10)
+train, val, test = ds[0:t], ds[t:t+cv], ds[t+cv:] # 70/10/20 train/val/test split
+
+print("Total files:", len(ds))
+print("Training set:", len(train))
+print("Validation set:", len(val))
+print("Test set:", len(test))
 
 # # writes a tfrecord file for train, validation, and training set
 write_TFRecords(train, 'chexnet_train', TFRECORD_DIR)
