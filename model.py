@@ -3,7 +3,7 @@ import densenet_layers as layers
 
 tfrecords_train = "E:\project data\chexnet\chexnet_train.tfrecords"
 tfrecords_test = "E:\project data\chexnet\chexnet_test.tfrecords"
-tfrecords_eval = "E:\project data\chexnet\chexnet_eval.tfrecords"
+tfrecords_eval = "E:\project data\chexnet\chexnet_val.tfrecords"
 densenet_test = "E:\project data\chexnet\densenet_test.tfrecords" # contains only 20 examples for testing purposes
 
 db_121 = [6, 12, 24, 16]
@@ -116,16 +116,14 @@ def DenseNet(features, labels, mode, params):
     if mode == tf.estimator.ModeKeys.TRAIN:
         lr = tf.train.exponential_decay(learning_rate=0.001,
                                                global_step=tf.train.get_global_step(),
-                                               decay_steps=200,
-                                               decay_rate=0.1,
-                                               staircase=True)
+                                               decay_steps=3000,
+                                               decay_rate=0.5)
         
         train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(loss=cost, global_step=tf.train.get_global_step())
         logging_hook = tf.train.LoggingTensorHook({"accuracy": accuracy,
-                                                   "label": labels,
                                                    "predictions": predictions['prob'],
                                                    }, 
-                                                  every_n_iter=50)
+                                                  every_n_iter=100)
         return tf.estimator.EstimatorSpec(mode, loss=cost, train_op=train_op, training_hooks=[logging_hook])
     
     # evaluate
@@ -193,32 +191,11 @@ def eval_func(path=tfrecords_eval):
         return image, label
     
     ds = ds.map(_parser) # parsing TFrecords; performance improvements?   
-    ds = ds.repeat(1) # go through evaluaation set only once
+    ds = ds.repeat(1) # go through evaluaation set once
     iterator = ds.make_one_shot_iterator()
     eval_img, eval_labels = iterator.get_next()
     
     return eval_img, eval_labels
-
-#%%
-# for handling inference requests after deployment; takes no arguments
-# =============================================================================
-# def receiver_func():
-#     # specifies the input node; can be a Tensor or a dict of string to Tensor
-#     receiver_tensor = tf.placeholder(dtype=tf.float32, name='input_node')
-#     
-#     # specifies the features to be passed to the model
-#     features = tf.parse_example(serialized_example, 
-#                                 features={'image': tf.FixedLenFeature([], tf.string)})
-#     
-#     
-#     tmp = tf.decode_raw(features['image'], out_type=tf.float32) 
-#     tmp = tf.image.resize_images(tmp, [224, 224]) # Bilinear interpolation
-#     tmp = tf.image.per_image_standardization(tmp) # normalize
-#     features['image'] = tmp
-#     
-#     return tf.estimator.export.ServingInputReceiver(features, receiver_tensors)
-# =============================================================================
-#%%
 
 #%%
 
@@ -233,7 +210,7 @@ def main(argv):
                                     model_dir='./model',
                                     config=tf.estimator.RunConfig(session_config=config)) 
 
-    chexnet.train(input_fn=input_func, steps=50000)
+    chexnet.train(input_fn=input_func, steps=100000)
     # chexnet.export_savedmodel(receiver_func, export_dir_base='./model')
     results = chexnet.evaluate(input_fn=eval_func)
     print(results) # dict containing predicted labels and accuracy
