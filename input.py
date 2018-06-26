@@ -60,14 +60,18 @@ def load_files(IMAGE_DIR):
                 
             labels.append(multi_hot_vec)
     
-    dataset = list(zip(image_paths, labels))
-    shuffle(dataset)
+    df['label vector'] = labels
+    df['file_paths'] = image_paths
+    patient_IDs = [df for _, df in df.groupby('Patient ID')]
+    shuffle(patient_IDs)
+    df = pd.concat(patient_IDs).reset_index(drop=True)
+    df.to_csv('shuffled_dataset.csv', index=False) # save
     
-    return dataset # list of tuples [(image_paths, label), ... ]
+    return df # shuffle dataframe grouped by patients
 
 #%%
 
-def write_TFRecords(dataset, name, TFRECORD_DIR):
+def write_TFRecords(dataset, name, TFRECORD_DIR, shards=1):
     
 # =============================================================================
 #     Converts preprocessed images into sharded TFRecords
@@ -80,67 +84,68 @@ def write_TFRecords(dataset, name, TFRECORD_DIR):
 #     Returns:
 #       none
 # =============================================================================
-    
-    fname = os.path.join(TFRECORD_DIR, name + '.tfrecords')
+
+    shard_size = int(len(dataset) / shards)
     print("Writing TFRecords...")
     
-# =============================================================================
-#     for i in range(0, len(image_paths), num_files):
-#         # Set TFrecords file name
-#         if num_files == len(image_paths):
-#             fname = os.path.join(TFRECORD_DIR, name + '.tfrecords')
-#             image_slice = image_paths
-#         else:
-#             fname = os.path.join(TFRECORD_DIR, name + str(file_count) + '.tfrecords')
-#             image_slice = image_paths[i:i+num_files]
-# =============================================================================
-            
-    with tf.python_io.TFRecordWriter(fname) as writer:
+    count = 0 # track progress
+    ds_shards = [dataset[i:i+shard_size] for i in range(0, len(dataset), shard_size)]
     
-        count = 0 # track progress
-        
-        for image_path, label in dataset: 
-            if os.path.isfile(image_path) == False: # some files in Data_Entry_2017.csv could not be extracted; skipped
-                continue
-            
-            try:
-                image = io.imread(image_path)
-                if image.shape != (1024,1024):
-                    image = image[:,:,0] # some images are (1024,1024,4)
-                image_raw = image.tostring()
-                example = tf.train.Example(features=tf.train.Features(feature={
-                            'label': int64_feature(label),
-                            'image': bytes_feature(image_raw)
-                            }))
-                writer.write(example.SerializeToString())
+    for num, shard in enumerate(ds_shards):
+        fname = os.path.join(TFRECORD_DIR, name + '_{}.tfrecords'.format(num))
+        with tf.python_io.TFRecordWriter(fname) as writer:
+            for image_path, label in shard:
+    
+                # some files in Data_Entry_2017.csv could not be extracted; skipped
+                if os.path.isfile(image_path) == False: 
+                    continue
                 
-                # print some stuff
-                count += 1
-                if count % 1000 == 0:
-                    print("Still working on it... Wrote {} files".format(count))
-                
-            except IOError as err:
-                print("Image could not be read. Error: %s" %err)
-                print("Image skipped\n")
-            except ValueError as err:
-                print("broken data stream")
+                try:
+                    image = io.imread(image_path)
+                    if image.shape != (1024,1024):
+                        image = image[:,:,0] # some images are (1024,1024,4)
+                    image_raw = image.tostring()
+                    example = tf.train.Example(features=tf.train.Features(feature={
+                                'label': int64_feature(label),
+                                'image': bytes_feature(image_raw)
+                                }))
+                    writer.write(example.SerializeToString())
+                    
+                    # print some stuff
+                    count += 1
+                    if count % 1000 == 0:
+                        print("Still working on it... Wrote {} files".format(count))
+                    
+                except IOError as err:
+                    print("Image could not be read. Error: %s" %err)
+                    print("Image skipped\n")
+                except ValueError as err:
+                    print("broken data stream")
         
     print("Conversion complete. Total files:", count)
     tmp = len(dataset) - count
     print("There were {} corrupt files".format(tmp))
 
 #%%
-ds = load_files(IMAGE_DIR)
-t, cv = int(len(ds) * 0.7), int(len(ds) * 0.10)
-train, val, test = ds[0:t], ds[t:t+cv], ds[t+cv:] # 70/10/20 train/val/test split
+df = load_files(IMAGE_DIR)
+image_paths = list(df['file_paths'])
+labels = list(df['label vector'])
+ds = list(zip(image_paths, labels))
+
+#%%
+train, val, test = ds[0:78631], ds[78631:90014], ds[90014:] # 70/10/20 train/val/test split
 
 print("Total files:", len(ds))
 print("Training set:", len(train))
+print('---------', train[-1])
 print("Validation set:", len(val))
+print('---------', val[-1])
 print("Test set:", len(test))
 
+#%%
+
 # # writes a tfrecord file for train, validation, and training set
-write_TFRecords(train, 'chexnet_train', TFRECORD_DIR)
+write_TFRecords(train, 'chexnet_train', TFRECORD_DIR, shards=30)
 write_TFRecords(val, 'chexnet_val', TFRECORD_DIR)
 write_TFRecords(test, 'chexnet_test', TFRECORD_DIR)
 
@@ -162,8 +167,8 @@ import matplotlib.pyplot as plt
 
 sample = 0
 
-for example in tf.python_io.tf_record_iterator("E:\project data\chexnet\densenet_test.tfrecords"):
-    if sample == 50:
+for example in tf.python_io.tf_record_iterator("E:\project data\chexnet\chexnet_train_0.tfrecords"):
+    if sample == 30:
         break
     result = tf.parse_single_example(example, features={
                                                         'image': tf.FixedLenFeature([], tf.string),
