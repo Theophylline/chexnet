@@ -1,10 +1,14 @@
 import tensorflow as tf
 import densenet_layers as layers
+from os.path import join
 
-tfrecords_train = "E:\project data\chexnet\chexnet_train.tfrecords"
-tfrecords_test = "E:\project data\chexnet\chexnet_test.tfrecords"
-tfrecords_eval = "E:\project data\chexnet\chexnet_val.tfrecords"
-densenet_test = "E:\project data\chexnet\densenet_test.tfrecords" # contains only 20 examples for testing purposes
+root = "E:\project data\chexnet"
+#train_tfshards = [join(root, shard) for shard in listdir(root) if isfile(join(root, shard)) and "chexnet_train" in shard]
+tfrecords_test = join(root, "chexnet_test.tfrecords")
+tfrecords_eval = join(root, "chexnet_val.tfrecords")
+
+# contains only 20 examples for testing purposes
+# densenet_test = "E:\project data\chexnet\densenet_test.tfrecords"
 
 db_121 = [6, 12, 24, 16]
 db_169 = [6, 12, 32, 32]
@@ -147,22 +151,22 @@ def parser(example, augmentation=True):
     image = tf.decode_raw(features['image'], tf.uint8)
     image = tf.reshape(image, [1024, 1024, 1])
     image = tf.cast(image, tf.float32)
-    # image = tf.image.central_crop(image, 0.9) # crop the central 80% of the image
+    image = tf.image.central_crop(image, 0.9) # crop the central 90% of the image
     image = tf.image.resize_images(image, [224, 224]) # Bilinear interpolation
     image = tf.image.per_image_standardization(image) # normalize; ChexNet actually uses avg and std of the ImageNet training set
-    #image = tf.image.random_flip_left_right(image)
+    image = tf.image.random_flip_left_right(image)
     label = tf.cast(features['label'], tf.float32)
     
     return image, label
 
 # input function for Estimator train()
-def input_func(path=densenet_test):
-    
-    ds = tf.data.TFRecordDataset(path)
+def input_func(path=root):
+    files = tf.data.Dataset.list_files(path + "chexnet_train_*.tfrecords", shuffle=True)
+    ds = files.interleave(tf.data.TFRecordDataset)
+    ds = ds.shuffle(2500)
     ds = ds.map(parser) # parsing TFrecords; performance improvements?
-    ds = ds.shuffle(20)
-    ds = ds.repeat()
-    ds = ds.batch(2) 
+    ds = ds.repeat(20)
+    ds = ds.batch(16) 
     iterator = ds.make_one_shot_iterator()
     batch_img, batch_labels = iterator.get_next()
     
@@ -207,10 +211,10 @@ def main(argv):
                                              "depth": 121,
                                              "growth": 32
                                     },
-                                    model_dir='./model',
+                                    model_dir='E:/project data/chexnet/model',
                                     config=tf.estimator.RunConfig(session_config=config)) 
 
-    chexnet.train(input_fn=input_func, steps=100000)
+    chexnet.train(input_fn=input_func)
     # chexnet.export_savedmodel(receiver_func, export_dir_base='./model')
     results = chexnet.evaluate(input_fn=eval_func)
     print(results) # dict containing predicted labels and accuracy
